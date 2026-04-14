@@ -37,6 +37,9 @@ import (
 // exercising a real database backend.
 type mockStore struct {
 	mock.Mock
+
+	addrStore   *mockAddrStore
+	chainParams *chaincfg.Params
 }
 
 // A compile-time assertion to ensure that mockStore implements the db.Store
@@ -44,7 +47,7 @@ type mockStore struct {
 var _ db.Store = (*mockStore)(nil)
 
 // StatsSnapshot returns an empty runtime snapshot for tests that use the mock
-// kvdb store.
+// store.
 func (m *mockStore) StatsSnapshot() dbruntime.StatsSnapshot {
 	return dbruntime.StatsSnapshot{}
 }
@@ -147,32 +150,101 @@ func (m *mockStore) CreateImportedAccount(ctx context.Context,
 func (m *mockStore) GetAccount(ctx context.Context,
 	query db.GetAccountQuery) (*db.AccountInfo, error) {
 
-	args := m.Called(ctx, query)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
+	if m.hasExpectation("GetAccount") || m.addrStore == nil {
+		args := m.Called(ctx, query)
+		if args.Get(0) == nil {
+			return nil, args.Error(1)
+		}
+
+		return args.Get(0).(*db.AccountInfo), args.Error(1)
 	}
 
-	return args.Get(0).(*db.AccountInfo), args.Error(1)
+	manager, err := m.addrStore.FetchScopedKeyManager(
+		waddrmgr.KeyScope(query.Scope),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	var accountNum uint32
+	if query.AccountNumber != nil {
+		accountNum = *query.AccountNumber
+	} else {
+		accountNum, err = manager.LookupAccount(nil, *query.Name)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	props, err := manager.AccountProperties(nil, accountNum)
+	if err != nil {
+		return nil, err
+	}
+
+	info := mockAccountInfoFromProps(props)
+
+	return &info, nil
 }
 
 // ListAccounts implements the db.AccountStore interface.
 func (m *mockStore) ListAccounts(ctx context.Context,
 	query db.ListAccountsQuery) ([]db.AccountInfo, error) {
 
-	args := m.Called(ctx, query)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
+	if m.hasExpectation("ListAccounts") || m.addrStore == nil {
+		args := m.Called(ctx, query)
+		if args.Get(0) == nil {
+			return nil, args.Error(1)
+		}
+
+		return args.Get(0).([]db.AccountInfo), args.Error(1)
 	}
 
-	return args.Get(0).([]db.AccountInfo), args.Error(1)
+	managers, err := mockAccountManagers(m.addrStore, query.Scope)
+	if err != nil {
+		return nil, err
+	}
+
+	var infos []db.AccountInfo
+	for _, manager := range managers {
+		scopeInfos, err := mockListAccounts(manager, query.Name)
+		if err != nil {
+			return nil, err
+		}
+
+		infos = append(infos, scopeInfos...)
+	}
+
+	return infos, nil
 }
 
 // RenameAccount implements the db.AccountStore interface.
 func (m *mockStore) RenameAccount(ctx context.Context,
 	params db.RenameAccountParams) error {
 
-	args := m.Called(ctx, params)
-	return args.Error(0)
+	if m.hasExpectation("RenameAccount") || m.addrStore == nil {
+		args := m.Called(ctx, params)
+
+		return args.Error(0)
+	}
+
+	manager, err := m.addrStore.FetchScopedKeyManager(
+		waddrmgr.KeyScope(params.Scope),
+	)
+	if err != nil {
+		return err
+	}
+
+	var accountNum uint32
+	if params.AccountNumber != nil {
+		accountNum = *params.AccountNumber
+	} else {
+		accountNum, err = manager.LookupAccount(nil, params.OldName)
+		if err != nil {
+			return err
+		}
+	}
+
+	return manager.RenameAccount(nil, accountNum, params.NewName)
 }
 // CreateTx implements the db.TxStore interface.
 func (m *mockStore) CreateTx(ctx context.Context,
@@ -259,6 +331,99 @@ func (m *mockStore) RollbackToBlock(ctx context.Context, height uint32) error {
 	args := m.Called(ctx, height)
 
 	return args.Error(0)
+}
+
+func (m *mockStore) hasExpectation(method string) bool {
+	for i := range m.ExpectedCalls {
+		if m.ExpectedCalls[i].Method == method {
+			return true
+		}
+	}
+
+	return false
+}
+
+func mockAccountManagers(addrStore *mockAddrStore,
+	scope *db.KeyScope) ([]waddrmgr.AccountStore, error) {
+
+	if scope != nil {
+		manager, err := addrStore.FetchScopedKeyManager(
+			waddrmgr.KeyScope(*scope),
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		return []waddrmgr.AccountStore{manager}, nil
+	}
+
+	return addrStore.ActiveScopedKeyManagers(), nil
+}
+
+func mockListAccounts(manager waddrmgr.AccountStore,
+	name *string) ([]db.AccountInfo, error) {
+
+	if name != nil {
+		accountNum, err := manager.LookupAccount(nil, *name)
+		if err != nil {
+			if waddrmgr.IsError(err, waddrmgr.ErrAccountNotFound) {
+				return []db.AccountInfo{}, nil
+			}
+
+			return nil, err
+		}
+
+		props, err := manager.AccountProperties(nil, accountNum)
+		if err != nil {
+			return nil, err
+		}
+
+		return []db.AccountInfo{mockAccountInfoFromProps(props)}, nil
+	}
+
+	lastAccount, err := manager.LastAccount(nil)
+	if err != nil {
+		return nil, err
+	}
+
+	infos := make([]db.AccountInfo, 0, lastAccount+1)
+	for accountNum := uint32(0); accountNum <= lastAccount; accountNum++ {
+		props, err := manager.AccountProperties(nil, accountNum)
+		if err != nil {
+			return nil, err
+		}
+
+		infos = append(infos, mockAccountInfoFromProps(props))
+	}
+
+	return infos, nil
+}
+
+func mockAccountInfoFromProps(
+	props *waddrmgr.AccountProperties,
+) db.AccountInfo {
+
+	origin := db.DerivedAccount
+	accountNum := props.AccountNumber
+
+	if props.AccountNumber == waddrmgr.ImportedAddrAccount ||
+		props.AccountName == waddrmgr.ImportedAddrAccountName {
+
+		origin = db.ImportedAccount
+		accountNum = 0
+	}
+
+	return *db.BuildAccountInfo(
+		accountNum,
+		props.AccountName,
+		origin,
+		props.ExternalKeyCount,
+		props.InternalKeyCount,
+		props.ImportedKeyCount,
+		props.IsWatchOnly,
+		time.Time{},
+		db.KeyScope(props.KeyScope),
+	)
 }
 
 // mockTxStore is a mock implementation of the wtxmgr.TxStore interface.
