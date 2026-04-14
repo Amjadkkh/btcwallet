@@ -145,6 +145,20 @@ func (s *Store) CreateDerivedAccount(_ context.Context,
 	return info, nil
 }
 
+// CreateImportedAccount is not yet implemented for kvdb.
+func (s *Store) CreateImportedAccount(ctx context.Context,
+	_ db.CreateImportedAccountParams) (*db.AccountProperties, error) {
+
+	return nil, notImplemented(ctx, "CreateImportedAccount")
+}
+
+// ImportAccount is not yet implemented for kvdb.
+func (s *Store) ImportAccount(ctx context.Context,
+	_ db.ImportAccountParams) (*db.AccountProperties, error) {
+
+	return nil, notImplemented(ctx, "ImportAccount")
+}
+
 // ListAccounts lists accounts through the legacy address-manager path.
 func (s *Store) ListAccounts(_ context.Context,
 	query db.ListAccountsQuery) ([]db.AccountInfo, error) {
