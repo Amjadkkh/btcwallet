@@ -214,11 +214,13 @@ func derivedAddressGetIntIndex(qtx *sqlc.Queries) func(context.Context,
 // derivedAddressCreateAddr returns the derived address insert helper.
 func derivedAddressCreateAddr(qtx *sqlc.Queries) func(
 	context.Context, int64, int64, db.AddressType, uint32, uint32, []byte,
+	[]byte,
 ) (sqlc.CreateDerivedAddressRow, error) {
 
 	return func(ctx context.Context, walletID int64, accountID int64,
 		addrType db.AddressType, branch uint32, index uint32,
-		scriptPubKey []byte) (sqlc.CreateDerivedAddressRow, error) {
+		scriptPubKey []byte,
+		pubKey []byte) (sqlc.CreateDerivedAddressRow, error) {
 
 		branchNum, err := db.Uint32ToInt16(branch)
 		if err != nil {
@@ -241,7 +243,7 @@ func derivedAddressCreateAddr(qtx *sqlc.Queries) func(
 					Int64: int64(index),
 					Valid: true,
 				},
-				PubKey: nil,
+				PubKey: pubKey,
 			},
 		)
 	}
@@ -345,13 +347,18 @@ func addressRowToInfo[T addressInfoRow](row T) (*db.AddressInfo, error) {
 	base := sqlc.GetAddressByScriptPubKeyRow(row)
 
 	info, err := db.AddressRowToInfo(db.AddressInfoRow[int16, int16]{
-		ID:            base.ID,
-		AccountID:     base.AccountID,
-		TypeID:        base.TypeID,
-		OriginID:      base.OriginID,
-		HasPrivateKey: base.HasPrivateKey,
-		HasScript:     base.HasScript,
-		CreatedAt:     base.CreatedAt,
+		ID:                base.ID,
+		AccountID:         base.AccountID,
+		AccountNumber:     base.AccountNumber,
+		AccountName:       base.AccountName,
+		MasterFingerprint: base.MasterFingerprint,
+		Purpose:           base.Purpose,
+		CoinType:          base.CoinType,
+		TypeID:            base.TypeID,
+		OriginID:          base.OriginID,
+		HasPrivateKey:     base.HasPrivateKey,
+		HasScript:         base.HasScript,
+		CreatedAt:         base.CreatedAt,
 		AddressBranch: sql.NullInt64{
 			Int64: int64(base.AddressBranch.Int16),
 			Valid: base.AddressBranch.Valid,

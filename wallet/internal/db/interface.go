@@ -235,6 +235,10 @@ type AddressDerivationFunc func(ctx context.Context, accountID uint32,
 type DerivedAddressData struct {
 	// ScriptPubKey is the script public key for the derived address.
 	ScriptPubKey []byte
+
+	// PubKey is the serialized public key for the derived address when one is
+	// available. Script-only addresses leave this empty.
+	PubKey []byte
 }
 
 // AddressStore defines the database actions for managing addresses.

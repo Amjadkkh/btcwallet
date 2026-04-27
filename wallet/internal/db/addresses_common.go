@@ -99,17 +99,24 @@ func (p NewImportedAddressParams) Validate() error {
 	return nil
 }
 
-// IsWatchOnly returns true if the params include neither a private key nor
-// a redeem or witness script.
+// HasPrivateKey returns true if the params include private key material.
+func (p NewImportedAddressParams) HasPrivateKey() bool {
+	return len(p.EncryptedPrivateKey) > 0
+}
+
+// HasScript returns true if the params include script spend data.
+func (p NewImportedAddressParams) HasScript() bool {
+	return len(p.EncryptedScript) > 0
+}
+
+// HasSecret returns true if the params include encrypted address secret data.
+func (p NewImportedAddressParams) HasSecret() bool {
+	return p.HasPrivateKey() || p.HasScript()
+}
+
+// IsWatchOnly returns true if the params do not include private key material.
 func (p NewImportedAddressParams) IsWatchOnly() bool {
-	noPrivKey := len(p.EncryptedPrivateKey) == 0
-	noScript := len(p.EncryptedScript) == 0
-
-	if noPrivKey && noScript {
-		return true
-	}
-
-	return false
+	return !p.HasPrivateKey()
 }
 
 // IDToOrigin safely converts an integer to AccountOrigin. It returns an error
@@ -131,6 +138,22 @@ type AddressInfoRow[TypeID, OriginIDType any] struct {
 
 	// AccountID is the database unique identifier for the account.
 	AccountID int64
+
+	// AccountNumber is the BIP44 account index of the owning account when the
+	// account is derived. Imported accounts leave this NULL.
+	AccountNumber sql.NullInt64
+
+	// AccountName is the human-readable name of the owning account.
+	AccountName string
+
+	// MasterFingerprint is the root fingerprint stored on the owning account.
+	MasterFingerprint sql.NullInt64
+
+	// Purpose is the BIP43 purpose component of the owning scope.
+	Purpose int64
+
+	// CoinType is the BIP44 coin type component of the owning scope.
+	CoinType int64
 
 	// TypeID is the database identifier for the address type.
 	TypeID TypeID
@@ -221,6 +244,50 @@ func convertAddressIDs(id, accountID int64) (uint32, uint32, error) {
 	return addrID, acctID, nil
 }
 
+// convertAccountMetadata converts account-level row data into wallet-facing
+// fields on AddressInfo.
+func convertAccountMetadata(accountNumber sql.NullInt64,
+	masterFingerprint sql.NullInt64, purpose int64, coinType int64) (uint32,
+	uint32, KeyScope, error) {
+
+	var account uint32
+	if accountNumber.Valid {
+		converted, err := Int64ToUint32(accountNumber.Int64)
+		if err != nil {
+			return 0, 0, KeyScope{}, fmt.Errorf("account number: %w", err)
+		}
+
+		account = converted
+	}
+
+	var fingerprint uint32
+	if masterFingerprint.Valid {
+		converted, err := Int64ToUint32(masterFingerprint.Int64)
+		if err != nil {
+			return 0, 0, KeyScope{}, fmt.Errorf(
+				"master fingerprint: %w", err,
+			)
+		}
+
+		fingerprint = converted
+	}
+
+	convertedPurpose, err := Int64ToUint32(purpose)
+	if err != nil {
+		return 0, 0, KeyScope{}, fmt.Errorf("scope purpose: %w", err)
+	}
+
+	convertedCoin, err := Int64ToUint32(coinType)
+	if err != nil {
+		return 0, 0, KeyScope{}, fmt.Errorf("scope coin type: %w", err)
+	}
+
+	return account, fingerprint, KeyScope{
+		Purpose: convertedPurpose,
+		Coin:    convertedCoin,
+	}, nil
+}
+
 // newImportedAddressTx handles the shared transaction flow for creating an
 // imported address across database backends.
 func newImportedAddressTx[QTX any, Row any, CreateArgs any, InsertArgs any](
@@ -238,7 +305,7 @@ func newImportedAddressTx[QTX any, Row any, CreateArgs any, InsertArgs any](
 	}
 
 	addrID := rowID(addrRow)
-	if !params.IsWatchOnly() {
+	if params.HasSecret() {
 		err = insertFn(qtx)(ctx, insertArgs(addrID, params))
 		if err != nil {
 			return nil, fmt.Errorf("insert address secret: %w", err)
@@ -322,6 +389,15 @@ func AddressRowToInfo[TypeID, OriginIDType any](
 		return nil, err
 	}
 
+	accountNumber, masterFingerprint, keyScope, err :=
+		convertAccountMetadata(
+			row.AccountNumber, row.MasterFingerprint, row.Purpose,
+			row.CoinType,
+		)
+	if err != nil {
+		return nil, err
+	}
+
 	addrType, origin, err := convertAddressMetadata(row)
 	if err != nil {
 		return nil, err
@@ -334,20 +410,23 @@ func AddressRowToInfo[TypeID, OriginIDType any](
 		return nil, err
 	}
 
-	isWatchOnly := origin == ImportedAccount && !row.HasPrivateKey &&
-		!row.HasScript
+	isWatchOnly := origin == ImportedAccount && !row.HasPrivateKey
 
 	return &AddressInfo{
-		ID:           id,
-		AccountID:    accountID,
-		AddrType:     addrType,
-		CreatedAt:    row.CreatedAt,
-		Origin:       origin,
-		Branch:       addrBranch,
-		Index:        addrIndex,
-		ScriptPubKey: row.ScriptPubKey,
-		PubKey:       row.PubKey,
-		IsWatchOnly:  isWatchOnly,
+		ID:                   id,
+		AccountID:            accountID,
+		AccountNumber:        accountNumber,
+		AccountName:          row.AccountName,
+		KeyScope:             keyScope,
+		MasterKeyFingerprint: masterFingerprint,
+		AddrType:             addrType,
+		CreatedAt:            row.CreatedAt,
+		Origin:               origin,
+		Branch:               addrBranch,
+		Index:                addrIndex,
+		ScriptPubKey:         row.ScriptPubKey,
+		PubKey:               row.PubKey,
+		IsWatchOnly:          isWatchOnly,
 	}, nil
 }
 
@@ -402,7 +481,7 @@ type DerivedAddressAdapters[QTX any, AccountRow any, AccountParams any,
 
 	// CreateAddr returns a function to create an address row.
 	CreateAddr func(QTX) func(context.Context, int64, int64, AddressType,
-		uint32, uint32, []byte) (AddrRow, error)
+		uint32, uint32, []byte, []byte) (AddrRow, error)
 
 	// RowID extracts the ID from an address row.
 	RowID func(AddrRow) int64
@@ -468,11 +547,11 @@ func createDerivedAddress[T any](ctx context.Context,
 	getExtIndex func(context.Context, int64) (int64, error),
 	getIntIndex func(context.Context, int64) (int64, error),
 	createFn func(context.Context, int64, int64, AddressType, uint32, uint32,
-		[]byte) (T, error),
+		[]byte, []byte) (T, error),
 	rowID func(T) int64, rowCreatedAt func(T) time.Time,
 	deriveFn AddressDerivationFunc) (*AddressInfo, error) {
 
-	addrType, branch, index, scriptPubKey, err :=
+	addrType, branch, index, scriptPubKey, pubKey, err :=
 		derivedAddressInput(
 			ctx, params, accountID, getExtIndex, getIntIndex, deriveFn,
 		)
@@ -482,6 +561,7 @@ func createDerivedAddress[T any](ctx context.Context,
 
 	row, err := createFn(
 		ctx, walletID, accountID, addrType, branch, index, scriptPubKey,
+		pubKey,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("create address: %w", err)
@@ -503,6 +583,7 @@ func createDerivedAddress[T any](ctx context.Context,
 		Branch:       branch,
 		Index:        index,
 		ScriptPubKey: scriptPubKey,
+		PubKey:       pubKey,
 		IsWatchOnly:  false,
 	}, nil
 }
@@ -515,11 +596,11 @@ func derivedAddressInput(ctx context.Context,
 	getExtIndex func(context.Context, int64) (int64, error),
 	getIntIndex func(context.Context, int64) (int64, error),
 	deriveFn AddressDerivationFunc) (AddressType, uint32, uint32,
-	[]byte, error) {
+	[]byte, []byte, error) {
 
 	addrSchema, err := getAddrSchemaForScope(params.Scope)
 	if err != nil {
-		return 0, 0, 0, nil, err
+		return 0, 0, 0, nil, nil, err
 	}
 
 	var (
@@ -539,34 +620,37 @@ func derivedAddressInput(ctx context.Context,
 
 	indexValue, err := getIdx(ctx, accountID)
 	if err != nil {
-		return 0, 0, 0, nil, fmt.Errorf("get next address index: %w", err)
+		return 0, 0, 0, nil, nil, fmt.Errorf(
+			"get next address index: %w", err,
+		)
 	}
 
 	if indexValue > math.MaxUint32 {
-		return 0, 0, 0, nil, ErrMaxAddressIndexReached
+		return 0, 0, 0, nil, nil, ErrMaxAddressIndexReached
 	}
 
 	index, err := Int64ToUint32(indexValue)
 	if err != nil {
-		return 0, 0, 0, nil, fmt.Errorf("address index: %w", err)
+		return 0, 0, 0, nil, nil, fmt.Errorf("address index: %w", err)
 	}
 
 	acctID, err := Int64ToUint32(accountID)
 	if err != nil {
-		return 0, 0, 0, nil, fmt.Errorf("account ID: %w", err)
+		return 0, 0, 0, nil, nil, fmt.Errorf("account ID: %w", err)
 	}
 
 	derivedData, err := deriveFn(ctx, acctID, branch, index)
 	if err != nil {
-		return 0, 0, 0, nil, fmt.Errorf("derive address: %w", err)
+		return 0, 0, 0, nil, nil, fmt.Errorf("derive address: %w", err)
 	}
 
 	if derivedData == nil {
-		return 0, 0, 0, nil, fmt.Errorf("derive address: %w",
+		return 0, 0, 0, nil, nil, fmt.Errorf("derive address: %w",
 			errNilDerivedAddressData)
 	}
 
-	return addrType, branch, index, derivedData.ScriptPubKey, nil
+	return addrType, branch, index, derivedData.ScriptPubKey,
+		derivedData.PubKey, nil
 }
 
 // NewDerivedAddressWithTx combines transaction execution, account lookup,

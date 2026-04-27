@@ -364,6 +364,7 @@ func TestNewImportedAddressWithEncryptedScript(t *testing.T) {
 			require.NotNil(t, info.PubKey)
 			require.NotNil(t, info.ScriptPubKey)
 			require.Equal(t, tc.expectedAddrType, info.AddrType)
+			require.Equal(t, !tc.hasPrivateKey, info.IsWatchOnly)
 
 			addressID := getAddressID(
 				t, queries, params.ScriptPubKey, walletID,

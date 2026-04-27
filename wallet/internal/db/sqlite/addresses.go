@@ -215,13 +215,15 @@ func derivedAddressGetIntIndex(
 // derivedAddressCreateAddr returns the derived address insert helper.
 func derivedAddressCreateAddr(
 	qtx *sqlc.Queries,
-) func(context.Context, int64, int64, db.AddressType, uint32, uint32, []byte) (
+) func(context.Context, int64, int64, db.AddressType, uint32, uint32, []byte,
+	[]byte) (
 	sqlc.CreateDerivedAddressRow, error,
 ) {
 
 	return func(ctx context.Context, walletID int64, accountID int64,
 		addrType db.AddressType, branch uint32, index uint32,
-		scriptPubKey []byte) (sqlc.CreateDerivedAddressRow, error) {
+		scriptPubKey []byte,
+		pubKey []byte) (sqlc.CreateDerivedAddressRow, error) {
 
 		return qtx.CreateDerivedAddress(
 			ctx, sqlc.CreateDerivedAddressParams{
@@ -237,7 +239,7 @@ func derivedAddressCreateAddr(
 					Int64: int64(index),
 					Valid: true,
 				},
-				PubKey: nil,
+				PubKey: pubKey,
 			},
 		)
 	}
@@ -344,19 +346,24 @@ func addressRowToInfo[T addressInfoRow](row T) (*db.AddressInfo,
 	base := sqlc.GetAddressByScriptPubKeyRow(row)
 
 	info, err := db.AddressRowToInfo(db.AddressInfoRow[int64, int64]{
-		ID:            base.ID,
-		AccountID:     base.AccountID,
-		TypeID:        base.TypeID,
-		OriginID:      base.OriginID,
-		HasPrivateKey: base.HasPrivateKey,
-		HasScript:     base.HasScript,
-		CreatedAt:     base.CreatedAt,
-		AddressBranch: base.AddressBranch,
-		AddressIndex:  base.AddressIndex,
-		ScriptPubKey:  base.ScriptPubKey,
-		PubKey:        base.PubKey,
-		IDToAddrType:  db.IDToAddressType[int64],
-		IDToOrigin:    db.IDToOrigin[int64],
+		ID:                base.ID,
+		AccountID:         base.AccountID,
+		AccountNumber:     base.AccountNumber,
+		AccountName:       base.AccountName,
+		MasterFingerprint: base.MasterFingerprint,
+		Purpose:           base.Purpose,
+		CoinType:          base.CoinType,
+		TypeID:            base.TypeID,
+		OriginID:          base.OriginID,
+		HasPrivateKey:     base.HasPrivateKey,
+		HasScript:         base.HasScript,
+		CreatedAt:         base.CreatedAt,
+		AddressBranch:     base.AddressBranch,
+		AddressIndex:      base.AddressIndex,
+		ScriptPubKey:      base.ScriptPubKey,
+		PubKey:            base.PubKey,
+		IDToAddrType:      db.IDToAddressType[int64],
+		IDToOrigin:        db.IDToOrigin[int64],
 	})
 	if err != nil {
 		return nil, err
