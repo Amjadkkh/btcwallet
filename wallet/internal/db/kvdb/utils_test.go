@@ -5,7 +5,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/btcsuite/btcd/btcutil/hdkeychain"
 	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcwallet/waddrmgr"
 	"github.com/btcsuite/btcwallet/walletdb"
 	_ "github.com/btcsuite/btcwallet/walletdb/bdb"
 	"github.com/btcsuite/btcwallet/wtxmgr"
@@ -13,6 +15,8 @@ import (
 )
 
 const defaultDBTimeout = 10 * time.Second
+
+var testPrivPass = []byte("private")
 
 // newTestDB creates a temporary bdb walletdb for kvdb store tests.
 //
@@ -62,4 +66,58 @@ func newTxStore(t *testing.T, dbConn walletdb.DB) *wtxmgr.Store {
 	require.NoError(t, err)
 
 	return txStore
+}
+// newAddrmgrNamespace creates the top-level waddrmgr bucket expected by kvdb
+// address-related tests.
+func newAddrmgrNamespace(t *testing.T, dbConn walletdb.DB) {
+	t.Helper()
+
+	err := walletdb.Update(dbConn, func(tx walletdb.ReadWriteTx) error {
+		_, err := tx.CreateTopLevelBucket(waddrmgrNamespaceKey)
+		return err
+	})
+	require.NoError(t, err)
+}
+
+// newAddrStore initializes and opens a waddrmgr manager in the test database.
+func newAddrStore(t *testing.T, dbConn walletdb.DB) *waddrmgr.Manager {
+	t.Helper()
+
+	seed := make([]byte, 32)
+	for i := range seed {
+		seed[i] = byte(i + 1)
+	}
+
+	rootKey, err := hdkeychain.NewMaster(seed, &chaincfg.RegressionNetParams)
+	require.NoError(t, err)
+
+	err = walletdb.Update(dbConn, func(tx walletdb.ReadWriteTx) error {
+		ns, err := tx.CreateTopLevelBucket(waddrmgrNamespaceKey)
+		if err != nil {
+			return err
+		}
+
+		return waddrmgr.Create(
+			ns, rootKey, []byte("public"), testPrivPass,
+			&chaincfg.RegressionNetParams, nil, time.Unix(1, 0),
+		)
+	})
+	require.NoError(t, err)
+
+	var addrStore *waddrmgr.Manager
+
+	err = walletdb.View(dbConn, func(tx walletdb.ReadTx) error {
+		ns := tx.ReadBucket(waddrmgrNamespaceKey)
+
+		var err error
+		addrStore, err = waddrmgr.Open(
+			ns, []byte("public"), &chaincfg.RegressionNetParams,
+		)
+
+		return err
+	})
+	require.NoError(t, err)
+	t.Cleanup(addrStore.Close)
+
+	return addrStore
 }
