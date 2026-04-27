@@ -48,6 +48,18 @@ type mockStore struct {
 // interface.
 var _ db.Store = (*mockStore)(nil)
 
+// expectsCall returns true if the mock has an explicit expectation for the
+// named method.
+func (m *mockStore) expectsCall(method string) bool {
+	for _, call := range m.ExpectedCalls {
+		if call.Method == method {
+			return true
+		}
+	}
+
+	return false
+}
+
 // StatsSnapshot returns an empty runtime snapshot for tests that use the mock
 // store.
 func (m *mockStore) StatsSnapshot() dbruntime.StatsSnapshot {
@@ -382,6 +394,10 @@ func (m *mockStore) NewImportedAddress(ctx context.Context,
 // GetAddress implements the db.AddressStore interface.
 func (m *mockStore) GetAddress(ctx context.Context,
 	query db.GetAddressQuery) (*db.AddressInfo, error) {
+
+	if !m.expectsCall("GetAddress") {
+		return nil, db.ErrAddressNotFound
+	}
 
 	args := m.Called(ctx, query)
 	if args.Get(0) == nil {

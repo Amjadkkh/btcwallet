@@ -17,6 +17,7 @@ import (
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcwallet/waddrmgr"
+	db "github.com/btcsuite/btcwallet/wallet/internal/db"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -265,6 +266,19 @@ func expectDerivedSignerPrivKey(t *testing.T, mocks *mockWalletDeps,
 		Return(mocks.accountManager, nil).Once()
 	mocks.accountManager.On("DeriveFromKeyPathCache", path).
 		Return(privKey, nil).Once()
+}
+
+// expectStoreAddressMiss wires the address-store lookup path to fall back to
+// the legacy address manager.
+func expectStoreAddressMiss(t *testing.T, mocks *mockWalletDeps,
+	walletID uint32, scriptPubKey []byte) {
+
+	t.Helper()
+
+	mocks.store.On("GetAddress", mock.Anything, db.GetAddressQuery{
+		WalletID:     walletID,
+		ScriptPubKey: scriptPubKey,
+	}).Return(nil, db.ErrAddressNotFound).Once()
 }
 
 // TestSignDigest tests the signing of a message digest with different signature
@@ -572,6 +586,7 @@ func TestComputeUnlockingScriptP2PKH(t *testing.T) {
 	require.NoError(t, err)
 
 	prevOut, tx := createDummyTestTx(pkScript)
+	expectStoreAddressMiss(t, mocks, w.id, pkScript)
 
 	// The wallet needs to be able to find the private key for the given
 	// address. We mock the address store to return a mock address that,
@@ -665,6 +680,7 @@ func TestComputeUnlockingScriptP2WKH(t *testing.T) {
 	require.NoError(t, err)
 
 	prevOut, tx := createDummyTestTx(pkScript)
+	expectStoreAddressMiss(t, mocks, w.id, pkScript)
 
 	// The wallet needs to be able to find the private key for the given
 	// address. We mock the address store to return a mock address that,
@@ -758,6 +774,7 @@ func TestComputeUnlockingScriptNP2WKH(t *testing.T) {
 	require.NoError(t, err)
 
 	prevOut, tx := createDummyTestTx(pkScript)
+	expectStoreAddressMiss(t, mocks, w.id, pkScript)
 
 	// The wallet needs to be able to find the private key for the given
 	// address. We mock the address store to return a mock address that,
@@ -853,6 +870,7 @@ func TestComputeUnlockingScriptP2TR(t *testing.T) {
 	require.NoError(t, err)
 
 	prevOut, tx := createDummyTestTx(pkScript)
+	expectStoreAddressMiss(t, mocks, w.id, pkScript)
 
 	// The wallet needs to be able to find the private key for the given
 	// address. We mock the address store to return a mock address that,
@@ -950,6 +968,7 @@ func TestComputeUnlockingScriptFail_ScriptForOutput(t *testing.T) {
 
 	// Arrange: Set up the wallet and mocks.
 	w, mocks := createUnlockedWalletWithMocks(t)
+	expectStoreAddressMiss(t, mocks, w.id, pkScript)
 
 	// Mock the address store to return an error.
 	mocks.addrStore.On("Address", mock.Anything, addr).
@@ -992,6 +1011,7 @@ func TestComputeUnlockingScriptFail_PrivKey(t *testing.T) {
 
 	// Arrange: Set up the wallet and mocks.
 	w, mocks := createUnlockedWalletWithMocks(t)
+	expectStoreAddressMiss(t, mocks, w.id, pkScript)
 
 	// Mock address store and managed address.
 	mocks.addrStore.On("Address", mock.Anything, addr).
@@ -1110,6 +1130,7 @@ func TestComputeUnlockingScriptFail_Tweak(t *testing.T) {
 
 	// Arrange: Set up the wallet and mocks.
 	w, mocks := createUnlockedWalletWithMocks(t)
+	expectStoreAddressMiss(t, mocks, w.id, pkScript)
 
 	// Mock address store and managed address.
 	mocks.addrStore.On("Address", mock.Anything, addr).
@@ -1180,6 +1201,7 @@ func TestComputeUnlockingScriptFail_UnsupportedAddr(t *testing.T) {
 
 	// Arrange: Set up the wallet and mocks.
 	w, mocks := createUnlockedWalletWithMocks(t)
+	expectStoreAddressMiss(t, mocks, w.id, pkScript)
 
 	// Mock address store and managed address.
 	mocks.addrStore.On("Address", mock.Anything, addr).
@@ -1227,6 +1249,7 @@ func TestComputeUnlockingScriptUnknownAddrType(t *testing.T) {
 	require.NoError(t, err)
 
 	prevOut, tx := createDummyTestTx(pkScript)
+	expectStoreAddressMiss(t, mocks, w.id, pkScript)
 
 	// Mock address lookup to return a valid managed address.
 	mocks.addrStore.On("Address", mock.Anything, addr).
