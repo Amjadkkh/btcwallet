@@ -149,6 +149,10 @@ type AddressInfoRow[TypeID, OriginIDType any] struct {
 	// MasterFingerprint is the root fingerprint stored on the owning account.
 	MasterFingerprint sql.NullInt64
 
+	// AccountProps contains account metadata fetched separately when the address
+	// query does not join all account fields.
+	AccountProps *AccountProperties
+
 	// Purpose is the BIP43 purpose component of the owning scope.
 	Purpose int64
 
@@ -288,6 +292,31 @@ func convertAccountMetadata(accountNumber sql.NullInt64,
 	}, nil
 }
 
+// convertAddressAccountMetadata converts the owning account metadata for an
+// address row. SQL backends may fetch account properties separately to avoid
+// widening address queries.
+func convertAddressAccountMetadata[TypeID, OriginIDType any](
+	row AddressInfoRow[TypeID, OriginIDType]) (uint32, string, uint32,
+	KeyScope, error) {
+
+	if row.AccountProps != nil {
+		return row.AccountProps.AccountNumber, row.AccountProps.AccountName,
+			row.AccountProps.MasterKeyFingerprint,
+			row.AccountProps.KeyScope, nil
+	}
+
+	accountNumber, masterFingerprint, keyScope, err :=
+		convertAccountMetadata(
+			row.AccountNumber, row.MasterFingerprint, row.Purpose,
+			row.CoinType,
+		)
+	if err != nil {
+		return 0, "", 0, KeyScope{}, err
+	}
+
+	return accountNumber, row.AccountName, masterFingerprint, keyScope, nil
+}
+
 // newImportedAddressTx handles the shared transaction flow for creating an
 // imported address across database backends.
 func newImportedAddressTx[QTX any, Row any, CreateArgs any, InsertArgs any](
@@ -389,11 +418,8 @@ func AddressRowToInfo[TypeID, OriginIDType any](
 		return nil, err
 	}
 
-	accountNumber, masterFingerprint, keyScope, err :=
-		convertAccountMetadata(
-			row.AccountNumber, row.MasterFingerprint, row.Purpose,
-			row.CoinType,
-		)
+	accountNumber, accountName, masterFingerprint, keyScope, err :=
+		convertAddressAccountMetadata(row)
 	if err != nil {
 		return nil, err
 	}
@@ -416,7 +442,7 @@ func AddressRowToInfo[TypeID, OriginIDType any](
 		ID:                   id,
 		AccountID:            accountID,
 		AccountNumber:        accountNumber,
-		AccountName:          row.AccountName,
+		AccountName:          accountName,
 		KeyScope:             keyScope,
 		MasterKeyFingerprint: masterFingerprint,
 		AddrType:             addrType,

@@ -25,12 +25,19 @@ func (s *Store) GetAddress(ctx context.Context,
 		getByScript := func(ctx context.Context,
 			query db.GetAddressQuery) (*db.AddressInfo, error) {
 
+			toInfo := func(
+				row sqlc.GetAddressByScriptPubKeyRow) (*db.AddressInfo,
+				error) {
+
+				return addressRowToInfo(ctx, q, row)
+			}
+
 			return db.GetAddress(
 				ctx, q.GetAddressByScriptPubKey,
 				sqlc.GetAddressByScriptPubKeyParams{
 					WalletID:     int64(query.WalletID),
 					ScriptPubKey: query.ScriptPubKey,
-				}, addressRowToInfo,
+				}, toInfo,
 			)
 		}
 
@@ -339,31 +346,33 @@ type addressInfoRow interface {
 
 // addressRowToInfo converts a SQLite address row to an AddressInfo
 // struct.
-func addressRowToInfo[T addressInfoRow](row T) (*db.AddressInfo,
-	error) {
+func addressRowToInfo[T addressInfoRow](ctx context.Context, q *sqlc.Queries,
+	row T) (*db.AddressInfo, error) {
+
 	// Direct conversion works only because all constraint types have
 	// identical fields. If sqlc types diverge, compilation will fail.
 	base := sqlc.GetAddressByScriptPubKeyRow(row)
 
+	accountProps, err := getAccountProps(ctx, q, base.AccountID)
+	if err != nil {
+		return nil, fmt.Errorf("get address account props: %w", err)
+	}
+
 	info, err := db.AddressRowToInfo(db.AddressInfoRow[int64, int64]{
-		ID:                base.ID,
-		AccountID:         base.AccountID,
-		AccountNumber:     base.AccountNumber,
-		AccountName:       base.AccountName,
-		MasterFingerprint: base.MasterFingerprint,
-		Purpose:           base.Purpose,
-		CoinType:          base.CoinType,
-		TypeID:            base.TypeID,
-		OriginID:          base.OriginID,
-		HasPrivateKey:     base.HasPrivateKey,
-		HasScript:         base.HasScript,
-		CreatedAt:         base.CreatedAt,
-		AddressBranch:     base.AddressBranch,
-		AddressIndex:      base.AddressIndex,
-		ScriptPubKey:      base.ScriptPubKey,
-		PubKey:            base.PubKey,
-		IDToAddrType:      db.IDToAddressType[int64],
-		IDToOrigin:        db.IDToOrigin[int64],
+		ID:            base.ID,
+		AccountID:     base.AccountID,
+		AccountProps:  accountProps,
+		TypeID:        base.TypeID,
+		OriginID:      base.OriginID,
+		HasPrivateKey: base.HasPrivateKey,
+		HasScript:     base.HasScript,
+		CreatedAt:     base.CreatedAt,
+		AddressBranch: base.AddressBranch,
+		AddressIndex:  base.AddressIndex,
+		ScriptPubKey:  base.ScriptPubKey,
+		PubKey:        base.PubKey,
+		IDToAddrType:  db.IDToAddressType[int64],
+		IDToOrigin:    db.IDToOrigin[int64],
 	})
 	if err != nil {
 		return nil, err
@@ -386,7 +395,7 @@ func listAddressesByAccount(ctx context.Context, q *sqlc.Queries,
 
 	items := make([]db.AddressInfo, len(rows))
 	for i, row := range rows {
-		item, err := addressRowToInfo(row)
+		item, err := addressRowToInfo(ctx, q, row)
 		if err != nil {
 			return nil,
 				fmt.Errorf("list addresses by account: map address row: %w",
