@@ -18,6 +18,10 @@ var (
 	// errNotImplemented is returned for unimplemented kvdb store methods.
 	errNotImplemented = errors.New("not implemented")
 
+	// errMissingTxmgrNamespace is returned when the legacy transaction manager
+	// bucket is not available in the kvdb wallet database.
+	errMissingTxmgrNamespace = errors.New("missing wtxmgr namespace")
+
 	// wtxmgrNamespaceKey is the walletdb top-level bucket key used by the
 	// transaction manager.
 	//
