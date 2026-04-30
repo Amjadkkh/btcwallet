@@ -24,7 +24,6 @@ import (
 	"github.com/btcsuite/btcwallet/waddrmgr"
 	db "github.com/btcsuite/btcwallet/wallet/internal/db"
 	"github.com/btcsuite/btcwallet/wallet/internal/db/page"
-	"github.com/btcsuite/btcwallet/walletdb"
 )
 
 var (
@@ -267,6 +266,36 @@ func storeAddressType(addrType waddrmgr.AddressType) (db.AddressType, error) {
 	}
 }
 
+// walletAddressType maps one db-native address type into the wallet-facing enum
+// used by public address metadata.
+func walletAddressType(addrType db.AddressType) (waddrmgr.AddressType, error) {
+	switch addrType {
+	case db.RawPubKey:
+		return waddrmgr.RawPubKey, nil
+
+	case db.PubKeyHash:
+		return waddrmgr.PubKeyHash, nil
+
+	case db.ScriptHash:
+		return waddrmgr.Script, nil
+
+	case db.NestedWitnessPubKey:
+		return waddrmgr.NestedWitnessPubKey, nil
+
+	case db.WitnessPubKey:
+		return waddrmgr.WitnessPubKey, nil
+
+	case db.WitnessScript:
+		return waddrmgr.WitnessScript, nil
+
+	case db.TaprootPubKey:
+		return waddrmgr.TaprootPubKey, nil
+
+	default:
+		return 0, fmt.Errorf("%w: %v", ErrUnknownAddrType, addrType)
+	}
+}
+
 // addressInfoFromStoreAddress converts one db-native address record into the
 // wallet-owned address metadata shape exposed by the public API.
 func addressInfoFromStoreAddress(storeAddr *db.AddressInfo,
@@ -318,25 +347,6 @@ func addressInfoFromStoreAddress(storeAddr *db.AddressInfo,
 	}
 
 	return info, nil
-}
-
-// legacyAddressInfo loads one address through the legacy address manager.
-func (w *Wallet) legacyAddressInfo(a btcutil.Address) (AddressInfo, error) {
-	var managedAddress waddrmgr.ManagedAddress
-
-	err := walletdb.View(w.cfg.DB, func(tx walletdb.ReadTx) error {
-		addrmgrNs := tx.ReadBucket(waddrmgrNamespaceKey)
-
-		var err error
-		managedAddress, err = w.addrStore.Address(addrmgrNs, a)
-
-		return err
-	})
-	if err != nil {
-		return AddressInfo{}, err
-	}
-
-	return addressInfoFromManagedAddress(managedAddress)
 }
 
 // txFromDetail returns the decoded transaction for one store tx-detail record.
@@ -623,7 +633,7 @@ func (w *Wallet) GetAddressInfo(ctx context.Context, a btcutil.Address) (
 		return AddressInfo{}, err
 	}
 
-	return w.legacyAddressInfo(a)
+	return w.DBGetLegacyAddressInfo(ctx, a)
 }
 
 // ListAddresses lists all addresses for a given account, including their
@@ -744,38 +754,17 @@ func (w *Wallet) ImportTaprootScript(ctx context.Context,
 		return AddressInfo{}, err
 	}
 
-	// Taproot script imports still rely on the legacy manager because the store
-	// layer does not yet expose encrypted tapscript import support.
-	manager, err := w.addrStore.FetchScopedKeyManager(
-		waddrmgr.KeyScopeBIP0086,
-	)
+	info, err := w.DBImportTaprootScript(ctx, tapscript)
 	if err != nil {
 		return AddressInfo{}, err
 	}
 
-	var addr waddrmgr.ManagedAddress
-
-	err = walletdb.Update(w.cfg.DB, func(tx walletdb.ReadWriteTx) error {
-		ns := tx.ReadWriteBucket(waddrmgrNamespaceKey)
-		syncedTo := w.addrStore.SyncedTo()
-
-		var err error
-		addr, err = manager.ImportTaprootScript(
-			ns, &tapscript, &syncedTo, 1, false,
-		)
-
-		return err
-	})
+	err = w.cfg.Chain.NotifyReceived([]btcutil.Address{info.Addr})
 	if err != nil {
 		return AddressInfo{}, err
 	}
 
-	err = w.cfg.Chain.NotifyReceived([]btcutil.Address{addr.Address()})
-	if err != nil {
-		return AddressInfo{}, err
-	}
-
-	return addressInfoFromManagedAddress(addr)
+	return info, nil
 }
 
 // ScriptForOutput returns the address metadata and spending scripts for a given

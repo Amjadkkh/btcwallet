@@ -183,6 +183,61 @@ func (w *Wallet) DBDeriveAddressData(_ context.Context, scope waddrmgr.KeyScope,
 	return derivedData, nil
 }
 
+// DBGetLegacyAddressInfo loads one address through the legacy address manager.
+func (w *Wallet) DBGetLegacyAddressInfo(_ context.Context,
+	a btcutil.Address) (AddressInfo, error) {
+
+	var managedAddress waddrmgr.ManagedAddress
+
+	err := walletdb.View(w.cfg.DB, func(tx walletdb.ReadTx) error {
+		addrmgrNs := tx.ReadBucket(waddrmgrNamespaceKey)
+
+		var err error
+		managedAddress, err = w.addrStore.Address(addrmgrNs, a)
+
+		return err
+	})
+	if err != nil {
+		return AddressInfo{}, err
+	}
+
+	return addressInfoFromManagedAddress(managedAddress)
+}
+
+// DBImportTaprootScript imports a taproot script through the legacy address
+// manager and returns the wallet-facing address metadata.
+func (w *Wallet) DBImportTaprootScript(_ context.Context,
+	tapscript waddrmgr.Tapscript) (AddressInfo, error) {
+
+	// Taproot script imports still rely on the legacy manager because the store
+	// layer does not yet expose encrypted tapscript import support.
+	manager, err := w.addrStore.FetchScopedKeyManager(
+		waddrmgr.KeyScopeBIP0086,
+	)
+	if err != nil {
+		return AddressInfo{}, err
+	}
+
+	var addr waddrmgr.ManagedAddress
+
+	err = walletdb.Update(w.cfg.DB, func(tx walletdb.ReadWriteTx) error {
+		ns := tx.ReadWriteBucket(waddrmgrNamespaceKey)
+		syncedTo := w.addrStore.SyncedTo()
+
+		var err error
+		addr, err = manager.ImportTaprootScript(
+			ns, &tapscript, &syncedTo, 1, false,
+		)
+
+		return err
+	})
+	if err != nil {
+		return AddressInfo{}, err
+	}
+
+	return addressInfoFromManagedAddress(addr)
+}
+
 // DBGetBirthdayBlock retrieves the current birthday block from the database.
 //
 // TODO(yy): Refactor this in the `Store` implementation - we can call

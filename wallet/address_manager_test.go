@@ -661,7 +661,7 @@ func TestImportTaprootScript(t *testing.T) {
 	).Return(deps.taprootAddr, nil).Once()
 	deps.chain.On("NotifyReceived", []btcutil.Address{addr}).
 		Return(nil).Once()
-	deps.taprootAddr.On("Address").Return(addr).Twice()
+	deps.taprootAddr.On("Address").Return(addr).Once()
 	deps.taprootAddr.On("AddrType").Return(waddrmgr.TaprootScript).Once()
 	deps.taprootAddr.On("Imported").Return(true).Once()
 	deps.taprootAddr.On("Internal").Return(false).Once()
