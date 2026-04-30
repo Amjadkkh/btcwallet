@@ -7,6 +7,8 @@ import (
 	"sort"
 	"time"
 
+	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcwallet/waddrmgr"
 	db "github.com/btcsuite/btcwallet/wallet/internal/db"
 	"github.com/btcsuite/btcwallet/walletdb"
@@ -25,14 +27,18 @@ var (
 var waddrmgrNamespaceKey = []byte("waddrmgr")
 
 // legacyAddrStore is the narrow subset of the legacy address manager that the
-// kvdb adapter needs for account operations.
+// kvdb adapter needs for account and UTXO operations.
 type legacyAddrStore interface {
 	ActiveScopedKeyManagers() []waddrmgr.AccountStore
+	AddrAccount(ns walletdb.ReadBucket,
+		address btcutil.Address) (waddrmgr.AccountStore, uint32, error)
+	ChainParams() *chaincfg.Params
 	NewScopedKeyManager(ns walletdb.ReadWriteBucket,
 		scope waddrmgr.KeyScope,
 		addrSchema waddrmgr.ScopeAddrSchema) (waddrmgr.AccountStore, error)
 	FetchScopedKeyManager(scope waddrmgr.KeyScope) (waddrmgr.AccountStore,
 		error)
+	SyncedTo() waddrmgr.BlockStamp
 }
 
 // GetAccount retrieves one account through the legacy address-manager path.

@@ -24,8 +24,7 @@ import (
 )
 
 var (
-	errUtxoHeightOverflow  = errors.New("utxo height overflows int32")
-	errUnsupportedAddrType = errors.New("unsupported address type")
+	errUtxoHeightOverflow = errors.New("utxo height overflows int32")
 )
 
 // Utxo provides a detailed overview of an unspent transaction output.
@@ -319,31 +318,6 @@ func utxoConfirmations(height uint32, currentHeight int32) (int32, error) {
 	}
 
 	return calcConf(txHeight, currentHeight), nil
-}
-
-// walletAddressType maps one db-native address type into the legacy wallet
-// address type enum used by the public UTXO view.
-func walletAddressType(addrType db.AddressType) (waddrmgr.AddressType, error) {
-	switch addrType {
-	case db.RawPubKey:
-		return waddrmgr.RawPubKey, nil
-	case db.PubKeyHash:
-		return waddrmgr.PubKeyHash, nil
-	case db.ScriptHash:
-		return waddrmgr.Script, nil
-	case db.NestedWitnessPubKey:
-		return waddrmgr.NestedWitnessPubKey, nil
-	case db.WitnessPubKey:
-		return waddrmgr.WitnessPubKey, nil
-	case db.WitnessScript:
-		return waddrmgr.WitnessScript, nil
-	case db.TaprootPubKey:
-		return waddrmgr.TaprootPubKey, nil
-	case db.Anchor:
-		return 0, fmt.Errorf("%w: %v", errUnsupportedAddrType, addrType)
-	default:
-		return 0, fmt.Errorf("%w: %v", errUnsupportedAddrType, addrType)
-	}
 }
 
 // LeaseOutput locks one wallet output for the given duration.

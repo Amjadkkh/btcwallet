@@ -1,12 +1,17 @@
 package kvdb
 
 import (
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/hdkeychain"
 	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcwallet/waddrmgr"
 	"github.com/btcsuite/btcwallet/walletdb"
 	_ "github.com/btcsuite/btcwallet/walletdb/bdb"
@@ -16,7 +21,10 @@ import (
 
 const defaultDBTimeout = 10 * time.Second
 
-var testPrivPass = []byte("private")
+var (
+	errTestAccountNotFound = errors.New("test account not found")
+	testPrivPass           = []byte("private")
+)
 
 // newTestDB creates a temporary bdb walletdb for kvdb store tests.
 //
@@ -67,6 +75,7 @@ func newTxStore(t *testing.T, dbConn walletdb.DB) *wtxmgr.Store {
 
 	return txStore
 }
+
 // newAddrmgrNamespace creates the top-level waddrmgr bucket expected by kvdb
 // address-related tests.
 func newAddrmgrNamespace(t *testing.T, dbConn walletdb.DB) {
@@ -120,4 +129,143 @@ func newAddrStore(t *testing.T, dbConn walletdb.DB) *waddrmgr.Manager {
 	t.Cleanup(addrStore.Close)
 
 	return addrStore
+}
+
+// testLegacyAddrStore is a narrow legacy address-manager test double.
+type testLegacyAddrStore struct {
+	chainParams   *chaincfg.Params
+	currentHeight int32
+	accountByAddr map[string]uint32
+}
+
+// ActiveScopedKeyManagers returns no scoped managers for this test double.
+func (s *testLegacyAddrStore) ActiveScopedKeyManagers() []waddrmgr.AccountStore {
+	return nil
+}
+
+// Address fails legacy address lookup for this test double.
+func (s *testLegacyAddrStore) Address(_ walletdb.ReadBucket,
+	_ btcutil.Address) (waddrmgr.ManagedAddress, error) {
+
+	return nil, errTestAccountNotFound
+}
+
+// AddrAccount returns the test account number for the requested address.
+func (s *testLegacyAddrStore) AddrAccount(_ walletdb.ReadBucket,
+	addr btcutil.Address) (waddrmgr.AccountStore, uint32, error) {
+
+	account, ok := s.accountByAddr[addr.String()]
+	if !ok {
+		return nil, 0, errTestAccountNotFound
+	}
+
+	return nil, account, nil
+}
+
+// Birthday returns the zero birthday for this test double.
+func (s *testLegacyAddrStore) Birthday() time.Time {
+	return time.Time{}
+}
+
+// BirthdayBlock returns no verified birthday block for this test double.
+func (s *testLegacyAddrStore) BirthdayBlock(
+	_ walletdb.ReadBucket) (waddrmgr.BlockStamp, bool, error) {
+
+	return waddrmgr.BlockStamp{}, false, nil
+}
+
+// BlockHash fails block-hash lookup for this test double.
+func (s *testLegacyAddrStore) BlockHash(_ walletdb.ReadBucket,
+	_ int32) (*chainhash.Hash, error) {
+
+	return nil, errTestAccountNotFound
+}
+
+// ChangePassphrase accepts passphrase updates for this test double.
+func (s *testLegacyAddrStore) ChangePassphrase(_ walletdb.ReadWriteBucket,
+	_, _ []byte, _ bool, _ *waddrmgr.ScryptOptions) error {
+
+	return nil
+}
+
+// ChainParams returns the chain parameters for this test double.
+func (s *testLegacyAddrStore) ChainParams() *chaincfg.Params {
+	return s.chainParams
+}
+
+// MarkUsed accepts address-used updates for this test double.
+func (s *testLegacyAddrStore) MarkUsed(_ walletdb.ReadWriteBucket,
+	_ btcutil.Address) error {
+
+	return nil
+}
+
+// NewScopedKeyManager fails scoped manager creation for this test double.
+func (s *testLegacyAddrStore) NewScopedKeyManager(
+	_ walletdb.ReadWriteBucket, _ waddrmgr.KeyScope,
+	_ waddrmgr.ScopeAddrSchema) (waddrmgr.AccountStore, error) {
+
+	return nil, errTestAccountNotFound
+}
+
+// FetchScopedKeyManager fails scoped manager lookup for this test double.
+func (s *testLegacyAddrStore) FetchScopedKeyManager(
+	_ waddrmgr.KeyScope) (waddrmgr.AccountStore, error) {
+
+	return nil, errTestAccountNotFound
+}
+
+// SetBirthday accepts birthday updates for this test double.
+func (s *testLegacyAddrStore) SetBirthday(_ walletdb.ReadWriteBucket,
+	_ time.Time) error {
+
+	return nil
+}
+
+// SetBirthdayBlock accepts birthday-block updates for this test double.
+func (s *testLegacyAddrStore) SetBirthdayBlock(_ walletdb.ReadWriteBucket,
+	_ waddrmgr.BlockStamp, _ bool) error {
+
+	return nil
+}
+
+// SetSyncedTo records the sync height for this test double.
+func (s *testLegacyAddrStore) SetSyncedTo(_ walletdb.ReadWriteBucket,
+	bs *waddrmgr.BlockStamp) error {
+
+	if bs != nil {
+		s.currentHeight = bs.Height
+	}
+
+	return nil
+}
+
+// SyncedTo returns the current test sync height.
+func (s *testLegacyAddrStore) SyncedTo() waddrmgr.BlockStamp {
+	return waddrmgr.BlockStamp{Height: s.currentHeight}
+}
+
+// Unlock accepts private-key unlocks for this test double.
+func (s *testLegacyAddrStore) Unlock(_ walletdb.ReadBucket,
+	_ []byte) error {
+
+	return nil
+}
+
+// newTestAddressScript returns a test address and its payment script.
+func newTestAddressScript(t *testing.T) (btcutil.Address, []byte) {
+	t.Helper()
+
+	privKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	addr, err := btcutil.NewAddressPubKey(
+		privKey.PubKey().SerializeCompressed(), &chaincfg.RegressionNetParams,
+	)
+	require.NoError(t, err)
+
+	pkScript, err := txscript.PayToAddrScript(addr)
+	require.NoError(t, err)
+
+	return addr, pkScript
 }
