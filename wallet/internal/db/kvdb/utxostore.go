@@ -29,6 +29,8 @@ var (
 	wtxmgrNamespaceKey = []byte("wtxmgr")
 )
 
+// notImplemented returns a consistent error for kvdb methods that still need a
+// legacy-backed implementation.
 func notImplemented(_ context.Context, method string) error {
 	return fmt.Errorf("kvdb.Store.%s: %w", method, errNotImplemented)
 }
