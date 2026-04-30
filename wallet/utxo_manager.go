@@ -114,7 +114,7 @@ type UtxoManager interface {
 // read by (1) extending ListUTXOs to return account, address type,
 // spendable, and locked state, (2) having the SQL backends populate those
 // fields from one joined query, and (3) removing the follow-up
-// ListLeasedOutputs/GetAddressDetails composition here.
+// ListLeasedOutputs/GetAddress composition here.
 //
 // NOTE: This is part of the UtxoManager interface implementation.
 func (w *Wallet) ListUnspent(ctx context.Context,
@@ -179,8 +179,8 @@ func (w *Wallet) ListUnspent(ctx context.Context,
 // TODO(yy): Collapse the SQL-backed GetUtxo path into one enriched store read
 // by (1) extending GetUtxo to return account, address type, spendable, and
 // locked state, (2) having the SQL backends populate those fields from one
-// joined query, and (3) removing the follow-up
-// ListLeasedOutputs/GetAddressDetails composition here.
+// joined query, and (3) removing the follow-up ListLeasedOutputs/GetAddress
+// composition here.
 //
 // NOTE: This is part of the UtxoManager interface implementation.
 func (w *Wallet) GetUtxo(ctx context.Context,
@@ -237,7 +237,7 @@ func (w *Wallet) buildWalletUtxoFromStore(ctx context.Context,
 		return nil, false, nil
 	}
 
-	spendable, account, addrType, err := w.lookupStoreAddressDetails(
+	spendable, account, addrType, err := w.lookupStoreAddress(
 		ctx, info.PkScript,
 	)
 	if err != nil {
@@ -283,27 +283,27 @@ func leasedOutputSet(leases []db.LeasedOutput) map[wire.OutPoint]bool {
 	return locked
 }
 
-// lookupStoreAddressDetails resolves the wallet-facing address metadata for one
-// UTXO script.
-func (w *Wallet) lookupStoreAddressDetails(ctx context.Context,
+// lookupStoreAddress resolves the wallet-facing address metadata for one UTXO
+// script.
+func (w *Wallet) lookupStoreAddress(ctx context.Context,
 	pkScript []byte) (bool, string, waddrmgr.AddressType, error) {
 
-	spendable, account, addrType, err := w.store.GetAddressDetails(
-		ctx, db.GetAddressDetailsQuery{
+	addrInfo, err := w.store.GetAddress(
+		ctx, db.GetAddressQuery{
 			WalletID:     w.id,
 			ScriptPubKey: pkScript,
 		},
 	)
 	if err != nil {
-		return false, "", 0, fmt.Errorf("get address details: %w", err)
+		return false, "", 0, fmt.Errorf("get address: %w", err)
 	}
 
-	walletAddrType, err := walletAddressType(addrType)
+	walletAddrType, err := walletAddressType(addrInfo.AddrType)
 	if err != nil {
 		return false, "", 0, err
 	}
 
-	return spendable, account, walletAddrType, nil
+	return !addrInfo.IsWatchOnly, addrInfo.AccountName, walletAddrType, nil
 }
 
 // utxoConfirmations converts one db-native UTXO height into wallet

@@ -137,23 +137,29 @@ func TestListUnspent(t *testing.T) {
 				switch {
 				case string(row.PkScript) == string(pkScriptDefault):
 					mocks.store.On(
-						"GetAddressDetails", mock.Anything,
-						db.GetAddressDetailsQuery{
+						"GetAddress", mock.Anything,
+						db.GetAddressQuery{
 							WalletID:     w.id,
 							ScriptPubKey: pkScriptDefault,
 						},
-					).Return(
-						false, defaultAccountName, db.WitnessPubKey, nil,
-					).Once()
+					).Return(&db.AddressInfo{
+						AccountName: defaultAccountName,
+						AddrType:    db.WitnessPubKey,
+						IsWatchOnly: true,
+					}, nil).Once()
 
 				case string(row.PkScript) == string(pkScriptTest):
 					mocks.store.On(
-						"GetAddressDetails", mock.Anything,
-						db.GetAddressDetailsQuery{
+						"GetAddress", mock.Anything,
+						db.GetAddressQuery{
 							WalletID:     w.id,
 							ScriptPubKey: pkScriptTest,
 						},
-					).Return(false, "test", db.NestedWitnessPubKey, nil).Once()
+					).Return(&db.AddressInfo{
+						AccountName: "test",
+						AddrType:    db.NestedWitnessPubKey,
+						IsWatchOnly: true,
+					}, nil).Once()
 				}
 			}
 
@@ -207,12 +213,16 @@ func TestGetUtxo(t *testing.T) {
 		[]db.LeasedOutput{}, nil,
 	).Once()
 	mocks.store.On(
-		"GetAddressDetails", mock.Anything,
-		db.GetAddressDetailsQuery{
+		"GetAddress", mock.Anything,
+		db.GetAddressQuery{
 			WalletID:     w.id,
 			ScriptPubKey: pkScriptDefault,
 		},
-	).Return(false, defaultAccountName, db.WitnessPubKey, nil).Once()
+	).Return(&db.AddressInfo{
+		AccountName: defaultAccountName,
+		AddrType:    db.WitnessPubKey,
+		IsWatchOnly: true,
+	}, nil).Once()
 
 	expectedUtxo := &Utxo{
 		OutPoint:      utxoInfo.OutPoint,
