@@ -449,8 +449,7 @@ func BenchmarkListTxnsAPI(b *testing.B) {
 
 				for i := 0; b.Loop(); i++ {
 					result, err = bw.ListTxns(
-						b.Context(), startHeight,
-						endHeight,
+						b.Context(), startHeight, endHeight,
 					)
 					require.NoError(b, err)
 
@@ -601,8 +600,7 @@ func BenchmarkListTxnsAPIConcurrently(b *testing.B) {
 				b.RunParallel(func(pb *testing.PB) {
 					for pb.Next() {
 						res, err := bw.ListTxns(
-							b.Context(),
-							startHeight, endHeight,
+							b.Context(), startHeight, endHeight,
 						)
 						afterResult = res
 
