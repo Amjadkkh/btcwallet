@@ -116,14 +116,12 @@ type UtxoLease struct {
 }
 
 type Wallet struct {
-	ID                      int64
-	WalletName              string
-	IsImported              bool
-	ManagerVersion          int32
-	IsWatchOnly             bool
-	MasterPubParams         []byte
-	EncryptedCryptoPubKey   []byte
-	EncryptedMasterHdPubKey []byte
+	ID             int64
+	WalletName     string
+	IsImported     bool
+	ManagerVersion int32
+	IsWatchOnly    bool
+	MasterHdPubKey []byte
 }
 
 type WalletSecret struct {
