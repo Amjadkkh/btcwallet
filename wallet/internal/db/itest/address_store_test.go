@@ -285,7 +285,7 @@ func TestNewImportedAddressWithEncryptedScript(t *testing.T) {
 			WalletID:            walletID,
 			Name:                db.DefaultImportedAccountName,
 			Scope:               db.KeyScopeBIP0044,
-			EncryptedPublicKey:  RandomBytes(32),
+			PublicKey:           RandomBytes(32),
 			EncryptedPrivateKey: RandomBytes(32),
 		},
 	)
@@ -296,7 +296,7 @@ func TestNewImportedAddressWithEncryptedScript(t *testing.T) {
 			WalletID:            walletID,
 			Name:                db.DefaultImportedAccountName,
 			Scope:               db.KeyScopeBIP0049Plus,
-			EncryptedPublicKey:  RandomBytes(32),
+			PublicKey:           RandomBytes(32),
 			EncryptedPrivateKey: RandomBytes(32),
 		},
 	)
@@ -545,7 +545,7 @@ func TestWatchOnlyHierarchyAddressRules(t *testing.T) {
 						WalletID:            walletID,
 						Name:                db.DefaultImportedAccountName,
 						Scope:               db.KeyScopeBIP0084,
-						EncryptedPublicKey:  RandomBytes(32),
+						PublicKey:           RandomBytes(32),
 						EncryptedPrivateKey: RandomBytes(32),
 					},
 				)
@@ -576,10 +576,10 @@ func TestWatchOnlyHierarchyAddressRules(t *testing.T) {
 
 				_, err := store.CreateImportedAccount(
 					t.Context(), db.CreateImportedAccountParams{
-						WalletID:           walletID,
-						Name:               db.DefaultImportedAccountName,
-						Scope:              db.KeyScopeBIP0084,
-						EncryptedPublicKey: RandomBytes(32),
+						WalletID:  walletID,
+						Name:      db.DefaultImportedAccountName,
+						Scope:     db.KeyScopeBIP0084,
+						PublicKey: RandomBytes(32),
 					},
 				)
 				require.NoError(t, err)
@@ -610,10 +610,10 @@ func TestWatchOnlyHierarchyAddressRules(t *testing.T) {
 
 				_, err := store.CreateImportedAccount(
 					t.Context(), db.CreateImportedAccountParams{
-						WalletID:           walletID,
-						Name:               db.DefaultImportedAccountName,
-						Scope:              db.KeyScopeBIP0084,
-						EncryptedPublicKey: RandomBytes(32),
+						WalletID:  walletID,
+						Name:      db.DefaultImportedAccountName,
+						Scope:     db.KeyScopeBIP0084,
+						PublicKey: RandomBytes(32),
 					},
 				)
 				require.NoError(t, err)
