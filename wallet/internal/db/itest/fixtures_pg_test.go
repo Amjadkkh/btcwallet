@@ -7,12 +7,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"math"
 	"testing"
 
 	"github.com/btcsuite/btcwallet/wallet/internal/db"
 	dberr "github.com/btcsuite/btcwallet/wallet/internal/db/err"
-	"github.com/btcsuite/btcwallet/wallet/internal/db/pg"
 	"github.com/btcsuite/btcwallet/wallet/internal/sql/pg/sqlc"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
@@ -348,6 +346,21 @@ func UpdateAccountNextInternalIndex(t *testing.T, dbConn *sql.DB,
 	require.NoError(t, err)
 }
 
+// UpdateKeyScopeNextAccountNumber updates the key scope's next account number
+// counter.
+func UpdateKeyScopeNextAccountNumber(t *testing.T, dbConn *sql.DB,
+	scopeID int64, nextAccountNumber uint32) {
+
+	t.Helper()
+
+	_, err := dbConn.ExecContext(
+		t.Context(),
+		"UPDATE key_scopes SET next_account_number = $1 WHERE id = $2",
+		int64(nextAccountNumber), scopeID,
+	)
+	require.NoError(t, err)
+}
+
 // GetKeyScopeID retrieves the scope ID for a given wallet and key scope.
 func GetKeyScopeID(t *testing.T, queries *sqlc.Queries,
 	walletID uint32, scope db.KeyScope) int64 {
@@ -426,20 +439,6 @@ func deleteAddress(ctx context.Context, dbConn *sql.DB,
 	}
 
 	return nil
-}
-
-func setupMaxAccountNumberTest(t *testing.T, store db.AccountStore,
-	walletID uint32) {
-
-	t.Helper()
-
-	require.IsType(t, &pg.Store{}, store)
-
-	pgStore := store.(*pg.Store)
-	queries := pgStore.Queries()
-	scopeID := GetKeyScopeID(t, queries, walletID, db.KeyScopeBIP0084)
-	CreateAccountWithNumber(t, queries, scopeID, math.MaxUint32-1,
-		"account-near-max")
 }
 
 // createImportedAddressRaw inserts an imported address directly through the
